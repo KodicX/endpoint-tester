@@ -73,7 +73,7 @@ export default function ResponsePanel({
   const headerEntries = response ? Object.entries(response.headers) : [];
   const statusLabel = response
     ? response.status === 0
-      ? "Network Error"
+      ? response.statusText || "Network Error"
       : `${response.status} ${response.statusText || getStatusLabel(response.status)}`
     : "";
 

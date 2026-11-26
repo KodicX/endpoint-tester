@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   type AuthConfig,
   type HistoryEntry,
@@ -10,6 +10,7 @@ import {
 import { stringifyParamsToUrl, substitutePathParams } from '../utils/url';
 
 const BODY_METHODS: HttpMethod[] = ['POST', 'PUT', 'PATCH', 'DELETE'];
+const REQUEST_TIMEOUT_MS = 30_000;
 
 function encodeBase64Utf8(input: string): string {
   const bytes = new TextEncoder().encode(input);
@@ -25,10 +26,92 @@ function isJsonContentType(contentType: string): boolean {
   return normalized.includes('application/json') || normalized.includes('+json');
 }
 
+function isValidJson(text: string): boolean {
+  try {
+    JSON.parse(text);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function isLocalOrPrivateHost(hostname: string): boolean {
+  const host = hostname.toLowerCase();
+  if (
+    host === 'localhost' ||
+    host === '127.0.0.1' ||
+    host === '0.0.0.0' ||
+    host === '[::1]' ||
+    host === '::1' ||
+    host.endsWith('.local')
+  ) {
+    return true;
+  }
+  if (/^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host)) return true;
+  if (/^192\.168\.\d{1,3}\.\d{1,3}$/.test(host)) return true;
+  if (/^172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}$/.test(host)) return true;
+  return false;
+}
+
+function formatNetworkError(
+  err: unknown,
+  targetUrl: string,
+  didTimeout: boolean,
+): string {
+  if (didTimeout) {
+    return `Request timed out after ${REQUEST_TIMEOUT_MS / 1000}s. The server did not respond in time or may be unreachable.`;
+  }
+
+  const baseMessage =
+    err instanceof Error ? err.message : 'Unknown error occurred';
+
+  const isFetchNetworkFailure =
+    err instanceof TypeError || /failed to fetch|networkerror|load failed/i.test(baseMessage);
+
+  if (!isFetchNetworkFailure) {
+    return baseMessage;
+  }
+
+  try {
+    const parsed = new URL(targetUrl);
+    const isPageHttps =
+      typeof window !== 'undefined' && window.location.protocol === 'https:';
+
+    if (isLocalOrPrivateHost(parsed.hostname)) {
+      const hints = [
+        '- Verify the local server is running on that port.',
+        '- Enable CORS on your local server (Access-Control-Allow-Origin).',
+      ];
+      if (isPageHttps) {
+        hints.push(
+          '- From HTTPS, Chrome Private Network Access requires "Access-Control-Allow-Private-Network: true" on OPTIONS preflight.',
+          '- Browsers block insecure HTTP calls to LAN IPs (Mixed Content). For unrestricted localhost testing, run this app locally with "pnpm dev".',
+        );
+      }
+      return `${baseMessage} (local/private network target: ${parsed.host})\n\nPossible causes:\n${hints.join('\n')}`;
+    }
+
+    if (isPageHttps && parsed.protocol === 'http:') {
+      return `${baseMessage} (Mixed Content blocked)\n\nThis page is served over HTTPS, so the browser blocked an insecure HTTP request to ${parsed.origin}. Use https:// if the API supports it.`;
+    }
+
+    return `${baseMessage}\n\nPossible causes:\n- CORS policy on ${parsed.origin} blocked this browser request (missing Access-Control-Allow-Origin or preflight headers).\n- The server is offline, DNS failed, or the SSL certificate is invalid.`;
+  } catch {
+    return baseMessage;
+  }
+}
+
 export function useRequest() {
   const [response, setResponse] = useState<RequestResponse | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    return () => {
+      abortControllerRef.current?.abort();
+    };
+  }, []);
 
   function parseResponseHeaders(headers: Headers): Record<string, string> {
     const result: Record<string, string> = {};
@@ -156,12 +239,23 @@ export function useRequest() {
     addEntry: (entry: HistoryEntry) => void,
     auth?: AuthConfig,
   ): Promise<RequestResponse | null> {
+    abortControllerRef.current?.abort();
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
+    let didTimeout = false;
+    const timeoutId = window.setTimeout(() => {
+      didTimeout = true;
+      controller.abort();
+    }, REQUEST_TIMEOUT_MS);
+
     setIsLoading(true);
     setError(null);
     setResponse(null);
 
     const startTime = performance.now();
     let finalResponse: RequestResponse | null = null;
+    let finalUrl = url.trim();
 
     try {
       let finalHeaders = buildHeaders(headers);
@@ -171,14 +265,23 @@ export function useRequest() {
       finalHeaders = authResult.headers;
       finalParams = authResult.params;
 
-      let finalUrl = stringifyParamsToUrl(url.trim(), finalParams);
+      finalUrl = stringifyParamsToUrl(url.trim(), finalParams);
       finalUrl = substitutePathParams(finalUrl, pathParams);
+
+      const hasBody = BODY_METHODS.includes(method) && body.trim() !== '';
+      const hasContentType = Object.keys(finalHeaders).some(
+        (key) => key.toLowerCase() === 'content-type',
+      );
+      if (hasBody && !hasContentType && isValidJson(body)) {
+        finalHeaders['Content-Type'] = 'application/json';
+      }
 
       const options: RequestInit = {
         method,
         headers: finalHeaders,
+        signal: controller.signal,
       };
-      if (BODY_METHODS.includes(method) && body.trim() !== '') {
+      if (hasBody) {
         options.body = body;
       }
 
@@ -214,14 +317,17 @@ export function useRequest() {
         auth,
       );
     } catch (err) {
+      if (controller.signal.aborted && !didTimeout) {
+        return null;
+      }
+
       const responseTime = performance.now() - startTime;
-      const errorMessage =
-        err instanceof Error ? err.message : 'Unknown error occurred';
+      const errorMessage = formatNetworkError(err, finalUrl, didTimeout);
 
       setError(errorMessage);
       finalResponse = {
         status: 0,
-        statusText: 'Network Error',
+        statusText: didTimeout ? 'Request Timeout' : 'Network Error',
         responseTime,
         data: null,
         headers: {},
@@ -246,9 +352,17 @@ export function useRequest() {
         auth,
       );
     } finally {
-      setIsLoading(false);
+      window.clearTimeout(timeoutId);
+      if (abortControllerRef.current === controller) {
+        abortControllerRef.current = null;
+        setIsLoading(false);
+      }
     }
     return finalResponse;
+  }
+
+  function cancelRequest(): void {
+    abortControllerRef.current?.abort();
   }
 
   function clearResponse(): void {
@@ -262,6 +376,7 @@ export function useRequest() {
     isLoading,
     error,
     executeRequest,
+    cancelRequest,
     clearResponse,
   };
 }
