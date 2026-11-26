@@ -19,7 +19,7 @@ This project provides a robust interface for testing RESTful APIs with real-time
 *   **Response Viewer:** Detailed inspection of status codes, headers, response time, and payload size.
 *   **Multi-Tab Interface:** Manage multiple independent requests simultaneously.
 *   **Persistence:** All tabs, history, and saved endpoints are persisted via `localStorage`.
-*   **Deployment Ready:** Pre-configured for **Netlify** with SPA routing support (`_redirects`).
+*   **Continuous Deployment:** Configured for automatic deployment on **Netlify** (`netlify.toml`) from `master` with SPA routing support (`_redirects`).
 
 ---
 
