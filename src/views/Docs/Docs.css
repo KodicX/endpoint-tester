@@ -115,13 +115,14 @@
 }
 
 /* Inline code formatting */
-code {
+.doc-content code {
   background-color: #1e1e1e;
   padding: 0.2rem 0.5rem;
   border-radius: 4px;
   font-family: monospace;
   color: #5ce6cd; /* Slightly teal to pop against dark mode */
-  font-size: 1.1rem;
+  font-size: 1.05rem;
+  word-break: break-word;
 }
 
 /* Code Block Formatting */
@@ -132,6 +133,7 @@ code {
   border-radius: 0 8px 8px 0;
   margin-bottom: 1.5rem;
   box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+  overflow-x: auto;
 }
 
 .code-block p {
@@ -145,8 +147,10 @@ code {
   padding: 0;
   color: #e0e0e0;
   display: block;
-  font-size: 1.1rem;
+  font-size: 1.05rem;
   line-height: 1.6rem;
+  word-break: normal;
+  white-space: pre-wrap;
 }
 
 .checklist {
@@ -156,12 +160,84 @@ code {
 
 .checklist li {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 12px;
+  font-size: 1.1rem;
+  line-height: 1.7rem;
+  color: #d4d3d3;
+  margin-bottom: 0.65rem;
+}
+
+.checklist li input[type="checkbox"] {
+  margin-top: 0.35rem;
+  flex-shrink: 0;
 }
 
 .license-text {
   text-align: center !important;
   color: #8b8b8b;
   font-size: 1rem;
+}
+
+@media (max-width: 768px) {
+  .doc-container {
+    height: auto;
+    min-height: calc(100dvh - 4em - 3.5em);
+    overflow-y: visible;
+    padding: 2rem 1.15rem;
+  }
+
+  .doc-header {
+    font-size: 2.25rem;
+    line-height: 1.15;
+  }
+
+  .doc-separator {
+    margin-bottom: 1.5rem;
+  }
+
+  .doc-intro {
+    font-size: 1rem;
+    line-height: 1.65;
+    margin-bottom: 2rem;
+  }
+
+  .doc-section {
+    margin-bottom: 2.25rem;
+  }
+
+  .doc-section h2 {
+    font-size: 1.45rem;
+  }
+
+  .doc-section h3 {
+    font-size: 1.15rem;
+    margin-top: 1.25rem;
+  }
+
+  .doc-section p,
+  .doc-list li,
+  .sub-list li,
+  .checklist li {
+    font-size: 0.95rem;
+    line-height: 1.6;
+  }
+
+  .doc-list,
+  .sub-list {
+    padding-left: 1.25rem;
+  }
+
+  .doc-content code,
+  .code-block code {
+    font-size: 0.88rem;
+  }
+
+  .code-block {
+    padding: 0.9rem 1rem;
+  }
+
+  .bottom-separator {
+    margin-top: 2.5rem;
+  }
 }
