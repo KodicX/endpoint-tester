@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { type RequestResponse } from "../../../utils/storage";
+import { getStatusLabel, type RequestResponse } from "../../../utils/storage";
 import Editor from "../Editor/Editor";
 import "./ResponsePanel.css";
 import { toast } from "sonner";
@@ -18,49 +18,63 @@ export default function ResponsePanel({
   const [prettyPrint, setPrettyPrint] = useState<boolean>(true);
   const [copied, setCopied] = useState<boolean>(false);
   const [responseTab, setResponseTab] = useState<"body" | "headers">("body");
-  
-  const [prevResponseId, setPrevResponseId] = useState<string | null>(null);
+  const [prevResponse, setPrevResponse] = useState<RequestResponse | null>(null);
 
-  const currentResponseId = response?.responseTime 
-    ? `${response.status}-${response.responseTime}` 
-    : null;
-
-  if (currentResponseId !== prevResponseId && currentResponseId !== null) {
-    setPrevResponseId(currentResponseId);
-    setPrettyPrint(true);
-    setResponseTab("body");
-  }
-
-  async function handleCopyResponse(): Promise<void> {
-    if (!response?.data) {
-      toast.error("No response data to copy!");
-      return;
+  if (response !== prevResponse) {
+    setPrevResponse(response);
+    if (response !== null) {
+      setPrettyPrint(true);
+      setResponseTab("body");
+      setCopied(false);
     }
-    const text =
-      typeof response.data === "string"
-        ? response.data
-        : JSON.stringify(response.data, null, 2);
-
-    await navigator.clipboard.writeText(text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-    toast.success("Response copied to clipboard!");
   }
 
-  function formatSize(bytes?: number): string {
-    if (bytes === undefined || bytes === 0) return "0 B";
-    const k = 1024;
-    const sizes = ["B", "KB", "MB", "GB"];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
-  }
+  const hasData =
+    response !== null && response.data !== null && response.data !== undefined;
+  const isJsonData = hasData && typeof response.data !== "string";
 
-  const responseBody = response?.data
+  const responseBody = hasData
     ? typeof response.data === "string"
       ? response.data
       : prettyPrint
         ? JSON.stringify(response.data, null, 2)
         : JSON.stringify(response.data)
+    : "";
+
+  async function handleCopyResponse(): Promise<void> {
+    if (!hasData || responseBody === "") {
+      toast.error("No response data to copy!");
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(responseBody);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+      toast.success("Response copied to clipboard!");
+    } catch {
+      toast.error("Failed to copy response to clipboard");
+    }
+  }
+
+  function formatSize(bytes?: number): string {
+    if (bytes === undefined || !Number.isFinite(bytes) || bytes <= 0) {
+      return "0 B";
+    }
+    const k = 1024;
+    const sizes = ["B", "KB", "MB", "GB"];
+    const i = Math.min(
+      Math.floor(Math.log(bytes) / Math.log(k)),
+      sizes.length - 1,
+    );
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
+  }
+
+  const headerEntries = response ? Object.entries(response.headers) : [];
+  const statusLabel = response
+    ? response.status === 0
+      ? "Network Error"
+      : `${response.status} ${response.statusText || getStatusLabel(response.status)}`
     : "";
 
   return (
@@ -79,31 +93,31 @@ export default function ResponsePanel({
             <span
               className={`status-badge ${getStatusCategory(response.status)}`}
             >
-              {response.status === 0
-                ? "Network Error"
-                : `${response.status} ${response.statusText}`}
+              {statusLabel}
             </span>
-            <span className="response-time">{Math.round(response.responseTime)} ms</span>
+            <span className="response-time">
+              {Math.round(response.responseTime)} ms
+            </span>
             <span className="response-size">{formatSize(response.size)}</span>
-            
+
             <div className="response-tabs-mini">
-              <button 
-                className={`mini-tab ${responseTab === 'body' ? 'active' : ''}`}
-                onClick={() => setResponseTab('body')}
+              <button
+                className={`mini-tab ${responseTab === "body" ? "active" : ""}`}
+                onClick={() => setResponseTab("body")}
               >
                 Body
               </button>
-              <button 
-                className={`mini-tab ${responseTab === 'headers' ? 'active' : ''}`}
-                onClick={() => setResponseTab('headers')}
+              <button
+                className={`mini-tab ${responseTab === "headers" ? "active" : ""}`}
+                onClick={() => setResponseTab("headers")}
               >
                 Headers
               </button>
             </div>
 
-            {!response.isError && responseTab === 'body' && (
+            {!response.isError && responseTab === "body" && (
               <>
-                {typeof response.data !== "string" && (
+                {isJsonData && (
                   <button
                     className="pretty-toggle"
                     onClick={() => setPrettyPrint((prev) => !prev)}
@@ -111,13 +125,7 @@ export default function ResponsePanel({
                     {prettyPrint ? "Raw" : "Pretty"}
                   </button>
                 )}
-                <button
-                  className="pretty-toggle"
-                  onClick={handleCopyResponse}
-                  style={{
-                    marginLeft: typeof response.data === "string" ? "auto" : "0",
-                  }}
-                >
+                <button className="pretty-toggle" onClick={handleCopyResponse}>
                   {copied ? "Copied" : "Copy"}
                 </button>
               </>
@@ -128,22 +136,29 @@ export default function ResponsePanel({
             <div className="response-body">
               <span className="response-error">{response.errorMessage}</span>
             </div>
-          ) : responseTab === 'body' ? (
+          ) : responseTab === "body" ? (
             <div className="response-body-editor">
               <Editor
                 value={responseBody}
                 readOnly={true}
-                 language={prettyPrint && typeof response.data !== "string" ? "json" : "text"}
+                placeholder="Empty response body"
+                language={prettyPrint && isJsonData ? "json" : "text"}
               />
             </div>
           ) : (
             <div className="response-headers-list">
-              {Object.entries(response.headers).map(([key, value]) => (
-                <div key={key} className="response-header-item">
-                  <span className="header-key">{key}:</span>
-                  <span className="header-value">{String(value)}</span>
+              {headerEntries.length === 0 ? (
+                <div className="response-empty">
+                  No response headers exposed (CORS may restrict visible headers).
                 </div>
-              ))}
+              ) : (
+                headerEntries.map(([key, value]) => (
+                  <div key={key} className="response-header-item">
+                    <span className="header-key">{key}:</span>
+                    <span className="header-value">{String(value)}</span>
+                  </div>
+                ))
+              )}
             </div>
           )}
         </>
