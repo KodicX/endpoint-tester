@@ -47,6 +47,7 @@ export function useHistory() {
       pathParams: entry.pathParams || [],
       headers: entry.headers,
       body: entry.body,
+      auth: entry.auth,
     });
   }
 

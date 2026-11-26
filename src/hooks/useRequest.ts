@@ -126,6 +126,7 @@ export function useRequest() {
     body: string,
     responseStatus: number,
     responseTime: number,
+    auth?: AuthConfig,
   ): void {
     const newEntry: HistoryEntry = {
       id: generateId(),
@@ -137,6 +138,7 @@ export function useRequest() {
       pathParams,
       headers,
       body,
+      auth,
       responseStatus,
       responseTime,
     };
@@ -209,6 +211,7 @@ export function useRequest() {
         body,
         res.status,
         responseTime,
+        auth,
       );
     } catch (err) {
       const responseTime = performance.now() - startTime;
@@ -240,6 +243,7 @@ export function useRequest() {
         body,
         0,
         responseTime,
+        auth,
       );
     } finally {
       setIsLoading(false);

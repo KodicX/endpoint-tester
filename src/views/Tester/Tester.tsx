@@ -37,25 +37,19 @@ export default function Tester() {
     updateSavedEndpoint,
   } = useSavedEndpoints();
   
-  const { response, setResponse, isLoading, executeRequest } = useRequest();
+  const { isLoading, executeRequest } = useRequest();
   const [historyOpen, setHistoryOpen] = useState<boolean>(false);
-  
+  const [loadingTabId, setLoadingTabId] = useState<string | null>(null);
+
   const activeTab = getActiveTab();
   const tabHistory = activeTab ? getHistoryByTab(activeTab.id) : [];
-
-  // Sync response with active tab
-  useEffect(() => {
-    if (activeTab) {
-      setResponse(activeTab.response || null);
-    } else {
-      setResponse(null);
-    }
-  }, [activeTabId, activeTab?.id, setResponse, activeTab]); // Only when tab changes
+  const activeResponse = activeTab?.response ?? null;
+  const isActiveTabLoading = isLoading && loadingTabId === activeTab?.id;
 
   // Dirty state detection
   const isDirty = useMemo(() => {
     if (!activeTab || !activeTab.savedId) return true;
-    const saved = savedEndpoints.find(e => e.id === activeTab.savedId);
+    const saved = savedEndpoints.find((e) => e.id === activeTab.savedId);
     if (!saved) return true;
 
     return (
@@ -86,7 +80,7 @@ export default function Tester() {
 
   async function handleSend(): Promise<void> {
     if (!activeTab || !activeTab.url.trim()) return;
-    
+
     if (!validateUrl(activeTab.url.trim())) {
       toast.error('Invalid URL', {
         description: 'Please enter a valid URL (must start with http:// or https://)',
@@ -94,20 +88,27 @@ export default function Tester() {
       return;
     }
 
-    const res = await executeRequest(
-      activeTab.id,
-      activeTab.method,
-      activeTab.url,
-      activeTab.params || [],
-      activeTab.pathParams || [],
-      activeTab.headers,
-      activeTab.body,
-      addEntry,
-      activeTab.auth,
-    );
+    const requestTabId = activeTab.id;
+    setLoadingTabId(requestTabId);
 
-    if (res) {
-      updateTab(activeTab.id, { response: res });
+    try {
+      const res = await executeRequest(
+        requestTabId,
+        activeTab.method,
+        activeTab.url,
+        activeTab.params || [],
+        activeTab.pathParams || [],
+        activeTab.headers,
+        activeTab.body,
+        addEntry,
+        activeTab.auth,
+      );
+
+      if (res) {
+        updateTab(requestTabId, { response: res });
+      }
+    } finally {
+      setLoadingTabId((current) => (current === requestTabId ? null : current));
     }
   }
 
@@ -115,7 +116,7 @@ export default function Tester() {
     if (!activeTab || !activeTab.url.trim()) return;
 
     if (activeTab.savedId) {
-      const existing = savedEndpoints.find(e => e.id === activeTab.savedId);
+      const existing = savedEndpoints.find((e) => e.id === activeTab.savedId);
       if (existing) {
         updateSavedEndpoint(activeTab.savedId, {
           method: activeTab.method,
@@ -142,6 +143,7 @@ export default function Tester() {
       pathParams: activeTab.pathParams || [],
       headers: activeTab.headers,
       body: activeTab.body,
+      auth: activeTab.auth,
     };
 
     saveEndpoint(newSaved);
@@ -151,11 +153,10 @@ export default function Tester() {
 
   function handleTabSwitch(id: string): void {
     setActiveTabId(id);
-    // Response sync handled by useEffect
   }
 
-  function handleReplay(tabId: string): void {
-    const entry = history.find((tab) => tab.id === tabId);
+  function handleReplay(entryId: string): void {
+    const entry = history.find((item) => item.id === entryId);
     if (!entry) return;
 
     const targetTab = tabs.find((t) => t.id === entry.tabId);
@@ -163,29 +164,37 @@ export default function Tester() {
       replayRequest(entry, updateTab);
       setActiveTabId(entry.tabId);
     } else {
-      createTab();
-      // Note: createTab sets activeTabId, but we might need to wait for it 
-      // or handle it in useTabs. For now, this is existing logic.
-      replayRequest({ ...entry, tabId: activeTabId }, updateTab);
+      createTab({
+        label: entry.url || 'Replayed Request',
+        method: entry.method,
+        url: entry.url,
+        params: entry.params || [],
+        pathParams: entry.pathParams || [],
+        headers: entry.headers,
+        body: entry.body,
+        auth: entry.auth,
+      });
     }
   }
 
   function handleReplaySaved(endpoint: SavedEndpoint): void {
+    const endpointChanges = {
+      method: endpoint.method,
+      url: endpoint.url,
+      params: endpoint.params || [],
+      pathParams: endpoint.pathParams || [],
+      headers: endpoint.headers,
+      body: endpoint.body,
+      auth: endpoint.auth,
+      label: endpoint.name,
+      savedId: endpoint.id,
+      response: null,
+    };
+
     if (activeTab) {
-      updateTab(activeTab.id, {
-        method: endpoint.method,
-        url: endpoint.url,
-        params: endpoint.params || [],
-        pathParams: endpoint.pathParams || [],
-        headers: endpoint.headers,
-        body: endpoint.body,
-        label: endpoint.name,
-        savedId: endpoint.id,
-        response: null, // Clear response when loading a saved one
-      });
+      updateTab(activeTab.id, endpointChanges);
     } else {
-      createTab();
-      // Future: implement logic to load into the newly created tab
+      createTab(endpointChanges);
     }
     toast.info(`Loaded: ${endpoint.name}`);
   }
@@ -226,7 +235,7 @@ export default function Tester() {
           activeTabId={activeTabId}
           onTabSwitch={handleTabSwitch}
           onCloseTab={closeTab}
-          onCreateTab={createTab}
+          onCreateTab={() => createTab()}
           onUpdateTab={updateTab}
         />
         
@@ -236,15 +245,15 @@ export default function Tester() {
             onUpdateTab={updateTab}
             onSend={handleSend}
             onSave={handleSaveEndpoint}
-            isLoading={isLoading}
+            isLoading={isActiveTabLoading}
             onToggleHistory={() => setHistoryOpen(prev => !prev)}
             historyOpen={historyOpen}
             isDirty={isDirty}
           />
           
           <ResponsePanel
-            response={response}
-            isLoading={isLoading}
+            response={activeResponse}
+            isLoading={isActiveTabLoading}
             getStatusCategory={getStatusCategory}
           />
         </div>

@@ -87,6 +87,7 @@ export type HistoryEntry = {
   pathParams: { key: string; value: string }[];
   headers: { key: string; value: string }[];
   body: string;
+  auth?: AuthConfig;
   responseStatus: number;
   responseTime: number;
 };
@@ -106,42 +107,66 @@ export type SavedEndpoint = {
 const TABS_KEY = 'daro_tabs';
 const HISTORY_KEY = 'daro_history';
 const SAVED_KEY = 'daro_saved_endpoints';
-const MAX_HISTORY = 5; // Limited for testing, real value set to 100-200
+const MAX_HISTORY = 100;
 const STORAGE_AVAILABLE = isStorageAvailable();
 
 export function generateId(): string {
   return crypto.randomUUID();
 }
 
+function safeParseJson<T>(raw: string | null, fallback: T): T {
+  if (!raw) return fallback;
+  try {
+    return JSON.parse(raw) as T;
+  } catch (error) {
+    console.warn('Failed to parse localStorage data, falling back to default', error);
+    return fallback;
+  }
+}
+
 export function getTabs(): Tab[] {
   if (!STORAGE_AVAILABLE) return [];
-  const tab = localStorage.getItem(TABS_KEY);
-  if (!tab) return [];
-  return JSON.parse(tab) as Tab[];
+  const parsed = safeParseJson<unknown>(localStorage.getItem(TABS_KEY), []);
+  return Array.isArray(parsed) ? (parsed as Tab[]) : [];
 }
 
 export function saveTabs(tabs: Tab[]): void {
   if (!STORAGE_AVAILABLE) return;
-  localStorage.setItem(TABS_KEY, JSON.stringify(tabs));
+  try {
+    localStorage.setItem(TABS_KEY, JSON.stringify(tabs));
+  } catch (error) {
+    console.warn(
+      'localStorage quota exceeded while saving tabs, retrying without cached responses',
+      error,
+    );
+    try {
+      const strippedTabs = tabs.map((tab) => ({ ...tab, response: null }));
+      localStorage.setItem(TABS_KEY, JSON.stringify(strippedTabs));
+    } catch (retryError) {
+      console.warn('Unable to persist tabs to localStorage', retryError);
+    }
+  }
 }
 
 export function getHistory(): HistoryEntry[] {
   if (!STORAGE_AVAILABLE) return [];
-  const history = localStorage.getItem(HISTORY_KEY);
-  if (!history) return [];
-  return JSON.parse(history) as HistoryEntry[];
+  const parsed = safeParseJson<unknown>(localStorage.getItem(HISTORY_KEY), []);
+  return Array.isArray(parsed) ? (parsed as HistoryEntry[]) : [];
 }
 
 export function getSavedEndpoints(): SavedEndpoint[] {
   if (!STORAGE_AVAILABLE) return [];
-  const saved = localStorage.getItem(SAVED_KEY);
-  if (!saved) return [];
-  return JSON.parse(saved) as SavedEndpoint[];
+  const parsed = safeParseJson<unknown>(localStorage.getItem(SAVED_KEY), []);
+  return Array.isArray(parsed) ? (parsed as SavedEndpoint[]) : [];
 }
 
 export function saveEndpoints(endpoints: SavedEndpoint[]): void {
   if (!STORAGE_AVAILABLE) return;
-  localStorage.setItem(SAVED_KEY, JSON.stringify(endpoints));
+  try {
+    localStorage.setItem(SAVED_KEY, JSON.stringify(endpoints));
+  } catch (error) {
+    console.warn('Unable to persist saved endpoints to localStorage', error);
+  }
 }
 
 function pruneHistory(entries: HistoryEntry[]): HistoryEntry[] {
@@ -156,11 +181,15 @@ export function saveHistory(entries: HistoryEntry[]): void {
     localStorage.setItem(HISTORY_KEY, JSON.stringify(pruned));
   } catch (error) {
     console.warn(
-      'localStorage is full, clearing history to free up space',
+      'localStorage is full, trimming history to free up space',
       error,
     );
-    const trimmed = entries.slice(0, MAX_HISTORY);
-    localStorage.setItem(HISTORY_KEY, JSON.stringify(trimmed));
+    try {
+      const trimmed = entries.slice(0, Math.min(20, MAX_HISTORY));
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(trimmed));
+    } catch (retryError) {
+      console.warn('Unable to persist history to localStorage', retryError);
+    }
   }
 }
 

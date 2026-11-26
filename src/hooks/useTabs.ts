@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { type Tab, getTabs, saveTabs, generateId } from '../utils/storage';
 
-function createDefaultTab(): Tab {
+function createDefaultTab(initialChanges?: Partial<Tab>): Tab {
   return {
     id: generateId(),
     label: 'New Tab',
@@ -13,37 +13,37 @@ function createDefaultTab(): Tab {
     body: '',
     response: null,
     savedId: undefined,
+    ...initialChanges,
   };
 }
 
-export function useTabs() {
-  const [tabs, setTabs] = useState<Tab[]>(() => {
-    const saved = getTabs();
-    return saved.length > 0
-      ? saved.map((tab) => ({
-          ...tab,
-          params: tab.params || [],
-          pathParams: tab.pathParams || [],
-          headers: tab.headers || [],
-          response: tab.response || null,
-          savedId: tab.savedId,
-        }))
-      : [createDefaultTab()];
-  });
+function loadInitialTabs(): Tab[] {
+  const saved = getTabs();
+  return saved.length > 0
+    ? saved.map((tab) => ({
+        ...tab,
+        params: tab.params || [],
+        pathParams: tab.pathParams || [],
+        headers: tab.headers || [],
+        response: tab.response || null,
+        savedId: tab.savedId,
+      }))
+    : [createDefaultTab()];
+}
 
-  const [activeTabId, setActiveTabId] = useState<string>(() => {
-    const saved = getTabs();
-    return saved.length > 0 ? saved[0].id : '';
-  });
+export function useTabs() {
+  const [tabs, setTabs] = useState<Tab[]>(loadInitialTabs);
+  const [activeTabId, setActiveTabId] = useState<string>(() => tabs[0]?.id ?? '');
 
   useEffect(() => {
     saveTabs(tabs);
   }, [tabs]);
 
-  function createTab(): void {
-    const newTab = createDefaultTab();
+  function createTab(initialChanges?: Partial<Tab>): Tab {
+    const newTab = createDefaultTab(initialChanges);
     setTabs((prev) => [...prev, newTab]);
     setActiveTabId(newTab.id);
+    return newTab;
   }
 
   function closeTab(id: string): void {

@@ -1,6 +1,14 @@
+export function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 export function parseParamsFromUrl(url: string): { key: string; value: string }[] {
   try {
-    const searchPart = url.split('?')[1];
+    const [withoutHash] = url.split('#');
+    const queryIndex = withoutHash.indexOf('?');
+    if (queryIndex === -1) return [];
+
+    const searchPart = withoutHash.slice(queryIndex + 1);
     if (!searchPart) return [];
 
     const searchParams = new URLSearchParams(searchPart);
@@ -16,16 +24,20 @@ export function parseParamsFromUrl(url: string): { key: string; value: string }[
   }
 }
 
-export function parsePathParamsFromUrl(url: string, currentPathParams: { key: string; value: string }[]): { key: string; value: string }[] {
+export function parsePathParamsFromUrl(
+  url: string,
+  currentPathParams: { key: string; value: string }[],
+): { key: string; value: string }[] {
   try {
-    const [baseUrl] = url.split('?');
+    const [withoutHash] = url.split('#');
+    const [baseUrl] = withoutHash.split('?');
     const segments = baseUrl.split('/');
     const detectedKeys: string[] = [];
 
-    segments.forEach(segment => {
+    segments.forEach((segment, index) => {
+      // Skip protocol/host segments (e.g., "http:", "", "localhost:3000")
+      if (index < 3 && baseUrl.includes('://')) return;
       if (segment.startsWith(':') && segment.length > 1) {
-        // Extract the key, removing any trailing characters that aren't part of the key
-        // (e.g., in /:id/posts, it should be 'id')
         const key = segment.substring(1);
         detectedKeys.push(key);
       }
@@ -35,8 +47,8 @@ export function parsePathParamsFromUrl(url: string, currentPathParams: { key: st
     const uniqueKeys = Array.from(new Set(detectedKeys));
 
     // Preserve existing values for keys that are still present
-    return uniqueKeys.map(key => {
-      const existing = (currentPathParams || []).find(p => p.key === key);
+    return uniqueKeys.map((key) => {
+      const existing = (currentPathParams || []).find((p) => p.key === key);
       return existing ? existing : { key, value: '' };
     });
   } catch {
@@ -44,9 +56,15 @@ export function parsePathParamsFromUrl(url: string, currentPathParams: { key: st
   }
 }
 
-export function stringifyParamsToUrl(baseUrl: string, params: { key: string; value: string }[]): string {
+export function stringifyParamsToUrl(
+  baseUrl: string,
+  params: { key: string; value: string }[],
+): string {
   try {
-    const [base] = baseUrl.split('?');
+    const hashIndex = baseUrl.indexOf('#');
+    const hashPart = hashIndex !== -1 ? baseUrl.slice(hashIndex) : '';
+    const withoutHash = hashIndex !== -1 ? baseUrl.slice(0, hashIndex) : baseUrl;
+    const [base] = withoutHash.split('?');
     const searchParams = new URLSearchParams();
 
     params.forEach(({ key, value }) => {
@@ -56,7 +74,7 @@ export function stringifyParamsToUrl(baseUrl: string, params: { key: string; val
     });
 
     const queryString = searchParams.toString();
-    return queryString ? `${base}?${queryString}` : base;
+    return queryString ? `${base}?${queryString}${hashPart}` : `${base}${hashPart}`;
   } catch {
     return baseUrl;
   }
@@ -65,17 +83,24 @@ export function stringifyParamsToUrl(baseUrl: string, params: { key: string; val
 /**
  * Substitutes path parameters (e.g., :id) with their values for the actual request.
  */
-export function substitutePathParams(url: string, pathParams: { key: string; value: string }[]): string {
+export function substitutePathParams(
+  url: string,
+  pathParams: { key: string; value: string }[],
+): string {
   let substitutedUrl = url;
-  
+
   pathParams.forEach(({ key, value }) => {
-    if (key.trim() !== '') {
-      // Use regex to replace :key with value, ensuring it matches the whole segment
-      // This matches :key when followed by /, ?, or end of string
-      const regex = new RegExp(`:${key}(?=/|\\?|$)`, 'g');
-      substitutedUrl = substitutedUrl.replace(regex, value.trim() || `:${key}`);
+    const trimmedKey = key.trim();
+    if (trimmedKey !== '') {
+      const escapedKey = escapeRegExp(trimmedKey);
+      const regex = new RegExp(`:${escapedKey}(?=/|\\?|#|$)`, 'g');
+      const trimmedValue = value.trim();
+      const replacement = trimmedValue
+        ? encodeURIComponent(trimmedValue)
+        : `:${trimmedKey}`;
+      substitutedUrl = substitutedUrl.replace(regex, replacement);
     }
   });
-  
+
   return substitutedUrl;
 }

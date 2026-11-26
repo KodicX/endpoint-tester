@@ -7,6 +7,7 @@ import {
   type AuthConfig,
 } from "../../../utils/storage";
 import {
+  escapeRegExp,
   parseParamsFromUrl,
   stringifyParamsToUrl,
   parsePathParamsFromUrl,
@@ -44,7 +45,7 @@ export default function RequestPanel({
   const [showOAuth, setShowOAuth] = useState(false);
   const [showJWT, setShowJWT] = useState(false);
 
-  const BODY_METHODS = ["POST", "PUT", "PATCH"] as HttpMethod[];
+  const BODY_METHODS = ["POST", "PUT", "PATCH", "DELETE"] as HttpMethod[];
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent): void {
@@ -111,7 +112,7 @@ export default function RequestPanel({
     let newUrl = activeTab.url;
     if (field === "key" && oldKey !== value) {
       // Update the URL to reflect the new key name: replace :oldKey with :value
-      const regex = new RegExp(`:${oldKey}(?=/|\\?|$)`, "g");
+      const regex = new RegExp(`:${escapeRegExp(oldKey)}(?=/|\\?|#|$)`, "g");
       newUrl = activeTab.url.replace(regex, `:${value}`);
     }
 
@@ -143,7 +144,7 @@ export default function RequestPanel({
     );
 
     // Remove :key from URL (and the preceding slash if possible)
-    const regex = new RegExp(`/:${oldKey}(?=/|\\?|$)`, "g");
+    const regex = new RegExp(`/:${escapeRegExp(oldKey)}(?=/|\\?|#|$)`, "g");
     const newUrl = activeTab.url.replace(regex, "");
 
     onUpdateTab(activeTab.id, {
