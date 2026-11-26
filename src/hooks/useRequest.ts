@@ -5,8 +5,25 @@ import {
   type HttpMethod,
   type RequestResponse,
   generateId,
+  getStatusLabel,
 } from '../utils/storage';
 import { stringifyParamsToUrl, substitutePathParams } from '../utils/url';
+
+const BODY_METHODS: HttpMethod[] = ['POST', 'PUT', 'PATCH', 'DELETE'];
+
+function encodeBase64Utf8(input: string): string {
+  const bytes = new TextEncoder().encode(input);
+  let binary = '';
+  bytes.forEach((byte) => {
+    binary += String.fromCharCode(byte);
+  });
+  return btoa(binary);
+}
+
+function isJsonContentType(contentType: string): boolean {
+  const normalized = contentType.toLowerCase();
+  return normalized.includes('application/json') || normalized.includes('+json');
+}
 
 export function useRequest() {
   const [response, setResponse] = useState<RequestResponse | null>(null);
@@ -21,63 +38,69 @@ export function useRequest() {
     return result;
   }
 
-  async function parseResponseBody(res: Response): Promise<unknown> {
+  async function parseResponseBody(
+    res: Response,
+  ): Promise<{ data: unknown; rawText: string }> {
+    const rawText = await res.text();
     const contentType = res.headers.get('content-type') ?? '';
-    if (contentType.includes('application/json')) {
+
+    if (rawText.trim() !== '' && isJsonContentType(contentType)) {
       try {
-        return await res.json();
+        return { data: JSON.parse(rawText), rawText };
       } catch {
-        return await res.text();
+        return { data: rawText, rawText };
       }
     }
-    return await res.text();
+
+    return { data: rawText, rawText };
   }
 
-  function calculateSize(headers: Headers, data: unknown): number {
+  function calculateSize(headers: Headers, rawText: string): number {
     const contentLength = headers.get('content-length');
     if (contentLength) {
-      return parseInt(contentLength, 10);
+      const parsed = parseInt(contentLength, 10);
+      if (!Number.isNaN(parsed) && parsed >= 0) {
+        return parsed;
+      }
     }
-    
-    // Fallback calculation
-    if (!data) return 0;
-    if (typeof data === 'string') return new Blob([data]).size;
-    if (typeof data === 'object') return new Blob([JSON.stringify(data)]).size;
-    return 0;
+
+    if (!rawText) return 0;
+    return new Blob([rawText]).size;
   }
 
   function applyAuth(
     auth: AuthConfig | undefined,
     headers: Record<string, string>,
-    params: { key: string, value: string}[]
+    params: { key: string; value: string }[],
   ): { headers: Record<string, string>; params: { key: string; value: string }[] } {
     if (!auth || auth.type === 'no-auth') return { headers, params };
 
     const newHeaders = { ...headers };
-    const newParams = { ...params };
+    const newParams = [...params];
 
     if (auth.type === 'bearer' && auth.bearer?.token) {
-      newHeaders['Authorization'] = `Bearer ${auth.bearer.token}`
-    }
-    else if (auth.type === 'jwt' && auth.jwt?.token) {
-      newHeaders['Authorization'] = `Bearer ${auth.jwt.token}`
-    }
-    else if (auth.type === 'oauth2' && auth.oauth2?.accessToken) {
-      newHeaders['Authorization'] = `Bearer ${auth.oauth2.accessToken}`
-    }
-    else if (auth.type === 'basic' && auth.basic) {
-      const encoded = btoa(`${auth.basic.username}:${auth.basic.password}`);
+      newHeaders['Authorization'] = `Bearer ${auth.bearer.token}`;
+    } else if (auth.type === 'jwt' && auth.jwt?.token) {
+      newHeaders['Authorization'] = `Bearer ${auth.jwt.token}`;
+    } else if (auth.type === 'oauth2' && auth.oauth2?.accessToken) {
+      newHeaders['Authorization'] = `Bearer ${auth.oauth2.accessToken}`;
+    } else if (auth.type === 'basic' && auth.basic) {
+      const encoded = encodeBase64Utf8(
+        `${auth.basic.username}:${auth.basic.password}`,
+      );
       newHeaders['Authorization'] = `Basic ${encoded}`;
-    }
-    else if (auth.type === 'api-key' && auth.apiKey) {
-      if (auth.apiKey.addTo === 'headers') {
-        newHeaders[auth.apiKey.key] = auth.apiKey.value;
-      } else {
-        newParams.push({ key: auth.apiKey.key, value: auth.apiKey.value });
+    } else if (auth.type === 'api-key' && auth.apiKey) {
+      const key = auth.apiKey.key.trim();
+      if (key !== '') {
+        if (auth.apiKey.addTo === 'headers') {
+          newHeaders[key] = auth.apiKey.value;
+        } else {
+          newParams.push({ key, value: auth.apiKey.value });
+        }
       }
     }
 
-    return { headers: newHeaders, params: newParams }
+    return { headers: newHeaders, params: newParams };
   }
 
   function buildHeaders(
@@ -136,39 +159,39 @@ export function useRequest() {
     setResponse(null);
 
     const startTime = performance.now();
-
-    let finalHeaders = buildHeaders(headers);
-    let finalParams = [...params];
-
-    const authResult = applyAuth(auth, finalHeaders, finalParams);
-    finalHeaders = authResult.headers;
-    finalParams = authResult.params;
-
-    let finalUrl = stringifyParamsToUrl(url, finalParams);
-    finalUrl = substitutePathParams(finalUrl, pathParams);
     let finalResponse: RequestResponse | null = null;
 
     try {
+      let finalHeaders = buildHeaders(headers);
+      let finalParams = [...params];
+
+      const authResult = applyAuth(auth, finalHeaders, finalParams);
+      finalHeaders = authResult.headers;
+      finalParams = authResult.params;
+
+      let finalUrl = stringifyParamsToUrl(url.trim(), finalParams);
+      finalUrl = substitutePathParams(finalUrl, pathParams);
+
       const options: RequestInit = {
         method,
         headers: finalHeaders,
       };
-      if (['POST', 'PUT', 'PATCH'].includes(method) && body.trim() !== '') {
+      if (BODY_METHODS.includes(method) && body.trim() !== '') {
         options.body = body;
       }
 
       const res = await fetch(finalUrl, options);
       const responseTime = performance.now() - startTime;
-      const responseData = await parseResponseBody(res);
-      const parseHeaders = parseResponseHeaders(res.headers);
-      const size = calculateSize(res.headers, responseData);
+      const { data: responseData, rawText } = await parseResponseBody(res);
+      const parsedHeaders = parseResponseHeaders(res.headers);
+      const size = calculateSize(res.headers, rawText);
 
       finalResponse = {
         status: res.status,
-        statusText: res.statusText,
+        statusText: res.statusText || getStatusLabel(res.status),
         responseTime,
         data: responseData,
-        headers: parseHeaders,
+        headers: parsedHeaders,
         isError: false,
         size,
       };
@@ -187,10 +210,10 @@ export function useRequest() {
         res.status,
         responseTime,
       );
-    } catch (error) {
+    } catch (err) {
       const responseTime = performance.now() - startTime;
       const errorMessage =
-        error instanceof Error ? error.message : 'Unkown error occurred';
+        err instanceof Error ? err.message : 'Unknown error occurred';
 
       setError(errorMessage);
       finalResponse = {
@@ -203,17 +226,28 @@ export function useRequest() {
         errorMessage,
         size: 0,
       };
-      
+
       setResponse(finalResponse);
 
-      logToHistory(addEntry, tabId, method, url, params, pathParams, headers, body, 0, responseTime);
+      logToHistory(
+        addEntry,
+        tabId,
+        method,
+        url,
+        params,
+        pathParams,
+        headers,
+        body,
+        0,
+        responseTime,
+      );
     } finally {
       setIsLoading(false);
     }
     return finalResponse;
   }
 
-    function clearResponse(): void {
+  function clearResponse(): void {
     setResponse(null);
     setError(null);
   }
