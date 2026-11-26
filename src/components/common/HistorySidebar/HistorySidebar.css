@@ -240,19 +240,49 @@
     position: fixed;
     bottom: 0;
     left: 0;
-    height: 45px;
+    right: 0;
+    height: calc(46px + env(safe-area-inset-bottom, 0px));
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    z-index: 150;
+    box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.55);
   }
 
   .history-sidebar.expanded {
-    height: 60vh;
+    height: 70dvh;
+    max-height: calc(100dvh - 4.5em);
+    border-radius: 12px 12px 0 0;
   }
 
   .history-sidebar.shrunk {
-    height: 45px;
+    height: calc(46px + env(safe-area-inset-bottom, 0px));
   }
 
   .history-shrunk-label {
     transform: translate(-50%, -50%);
     rotate: 0deg;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+
+  .history-shrunk-label::before {
+    content: '▲';
+    font-size: 0.65rem;
+    color: #2F86D8;
+  }
+
+  .history-sidebar-header {
+    padding: 0.65em 0.85em;
+    gap: 0.5rem;
+  }
+
+  .history-toggle-collapse,
+  .history-delete-btn {
+    min-width: 32px;
+    min-height: 32px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
   }
 }

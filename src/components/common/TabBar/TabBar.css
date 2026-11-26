@@ -7,8 +7,10 @@
   padding: 0 0.5em;
   height: 2.5em;
   overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
   flex-shrink: 0;
   gap: 0.25em;
+  min-width: 0;
 }
 
 .tab-bar::-webkit-scrollbar {
@@ -35,6 +37,7 @@
   transition: background 0.2s ease;
   min-width: 100px;
   max-width: 180px;
+  flex-shrink: 0;
 }
 
 .tab-item:hover {
@@ -122,4 +125,29 @@
   max-width: 150px;
   outline: none;
   margin: 0 4px;
+}
+
+@media (max-width: 768px) {
+  .tab-bar {
+    height: 2.75em;
+    padding: 0 0.4em;
+  }
+
+  .tab-item {
+    min-width: 96px;
+    max-width: 155px;
+    padding: 0.35em 0.6em;
+    font-size: 0.8rem;
+  }
+
+  .tab-close {
+    width: 22px;
+    height: 22px;
+    font-size: 1rem;
+  }
+
+  .tab-add {
+    min-width: 34px;
+    padding: 0.2em 0.55em;
+  }
 }

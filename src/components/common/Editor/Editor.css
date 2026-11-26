@@ -43,6 +43,7 @@
 
 .editor-content {
   flex: 1;
+  min-width: 0;
   padding: 10px;
   border: none;
   resize: none;
@@ -51,6 +52,7 @@
   white-space: pre;
   overflow-x: auto;
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   color: #e3e3e3;
   background-color: transparent;
   font-family: inherit;
@@ -70,6 +72,10 @@
   font-family: inherit;
   font-size: inherit;
   line-height: inherit;
+  font-weight: inherit;
+  color: inherit;
+  background-color: transparent;
+  padding: 0;
 }
 
 .editor-placeholder {
@@ -155,4 +161,26 @@
 .editor-content::-webkit-scrollbar-thumb:hover,
 .editor-gutter::-webkit-scrollbar-thumb:hover {
   background: #444;
+}
+
+@media (max-width: 600px) {
+  .editor-container {
+    font-size: 12px;
+    line-height: 18px;
+    min-height: 180px;
+  }
+
+  .editor-gutter {
+    min-width: 32px;
+    padding: 8px 0;
+  }
+
+  .editor-line-number {
+    height: 18px;
+    padding: 0 6px;
+  }
+
+  .editor-content {
+    padding: 8px;
+  }
 }
